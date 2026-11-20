@@ -1,0 +1,25 @@
+[package]
+name = "bloom-api"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+bloom-core = { workspace = true }
+bloom-harness = { workspace = true }
+bloom-storage = { workspace = true }
+bloom-discovery = { workspace = true }
+reqwest = { workspace = true, features = ["stream"] }
+subtle = "2.6"
+axum = { workspace = true }
+tokio = { workspace = true }
+tokio-stream = { workspace = true }
+futures = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+bloom-harness = { workspace = true, features = [] }
+bloom-storage = { workspace = true }

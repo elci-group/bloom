@@ -1,0 +1,18 @@
+[package]
+name = "bloom-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "bloom"
+path = "src/main.rs"
+
+[dependencies]
+bloom-core = { workspace = true }
+clap = { workspace = true }
+futures = { workspace = true }
+reqwest = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+toml = { workspace = true }

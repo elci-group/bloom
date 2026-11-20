@@ -1,0 +1,37 @@
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+
+[workspace.dependencies]
+bloom-core = { path = "crates/bloom-core" }
+bloom-discovery = { path = "crates/bloom-discovery" }
+bloom-harness = { path = "crates/bloom-harness" }
+bloom-harness-ollama = { path = "crates/bloom-harness-ollama" }
+bloom-resources = { path = "crates/bloom-resources" }
+bloom-storage = { path = "crates/bloom-storage" }
+bloom-api = { path = "crates/bloom-api" }
+tokio = { version = "1.54", features = ["full"] }
+axum = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sqlx = { version = "0.9", features = ["runtime-tokio", "sqlite"] }
+sysinfo = "0.40"
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
+async-trait = "0.1"
+thiserror = "2"
+uuid = { version = "1", features = ["v4", "serde"] }
+toml = "1"
+clap = { version = "4", features = ["derive", "env"] }
+futures = "0.3"
+tokio-stream = { version = "0.1", features = ["sync"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[profile.release]
+lto = "thin"
+strip = true

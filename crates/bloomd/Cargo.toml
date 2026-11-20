@@ -1,0 +1,24 @@
+[package]
+name = "bloomd"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "bloomd"
+path = "src/main.rs"
+
+[dependencies]
+bloom-core = { workspace = true }
+bloom-harness = { workspace = true }
+bloom-harness-ollama = { workspace = true }
+bloom-resources = { workspace = true }
+bloom-storage = { workspace = true }
+bloom-api = { workspace = true }
+bloom-discovery = { workspace = true }
+axum = { workspace = true }
+tokio = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+clap = { workspace = true }

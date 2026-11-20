@@ -1,0 +1,10 @@
+/target
+*.db
+*.db-shm
+*.db-wal
+# Analysis and automation state written by uni / poka / kaptaind
+/.uni/
+/.kaptaind/
+lwoodz.toml
+traci.toml
+poka.*

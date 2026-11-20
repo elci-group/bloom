@@ -1,0 +1,9 @@
+[package]
+name = "bloom-resources"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+bloom-core = { workspace = true }
+sysinfo = { workspace = true }

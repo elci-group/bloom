@@ -1,0 +1,35 @@
+[daemon]
+name = ""
+data_dir = "/var/lib/bloom"
+availability = "continuous"
+
+[api]
+bind = "127.0.0.1:7420"
+# token_env = "BLOOM_API_TOKEN"
+# peer_token_env = "BLOOM_INFERENCE_TOKEN"
+
+[telemetry]
+interval_ms = 1000
+
+[ollama]
+enabled = true
+mode = "attached"
+base_url = "http://127.0.0.1:11434"
+binary = "ollama"
+keep_alive = "5m"
+spawn_timeout_ms = 15000
+
+[policies]
+max_active_jobs = 4
+drain_on_start = false
+
+[swarm]
+discovery = false
+advertise = false
+# advertise_https_port = 443
+# ca_pem = "/etc/bloom/lan-ca.pem"
+
+# [[swarm.peers]]
+# node_id = "peer-node-id"
+# url = "https://peer.example"
+# token_env = "BLOOM_PEER_TOKEN"

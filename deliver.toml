@@ -1,0 +1,88 @@
+[[file]]
+path = "Cargo.toml"
+required = true
+
+[[file]]
+path = "crates/bloom-core/src/lib.rs"
+required = true
+forbid_regex = ["TODO", "FIXME", "unimplemented!"]
+
+[[file]]
+path = "crates/bloom-harness/src/lib.rs"
+required = true
+forbid_regex = ["TODO", "FIXME", "unimplemented!"]
+
+[[file]]
+path = "crates/bloom-harness-ollama/src/lib.rs"
+required = true
+forbid_regex = ["TODO", "FIXME", "unimplemented!"]
+
+[[file]]
+path = "crates/bloom-resources/src/lib.rs"
+required = true
+forbid_regex = ["TODO", "FIXME", "unimplemented!"]
+
+[[file]]
+path = "crates/bloom-storage/src/lib.rs"
+required = true
+forbid_regex = ["TODO", "FIXME", "unimplemented!"]
+
+[[file]]
+path = "crates/bloom-api/src/lib.rs"
+required = true
+forbid_regex = ["TODO", "FIXME", "unimplemented!"]
+
+[[file]]
+path = "crates/bloom-discovery/src/lib.rs"
+required = true
+forbid_regex = ["TODO", "FIXME", "unimplemented!"]
+
+[[file]]
+path = "crates/bloomd/src/main.rs"
+required = true
+forbid_regex = ["TODO", "FIXME", "unimplemented!"]
+
+[[file]]
+path = "crates/bloom-cli/src/main.rs"
+required = true
+forbid_regex = ["TODO", "FIXME", "unimplemented!"]
+
+[[file]]
+path = "platform/linux/bloomd.service"
+required = true
+
+[[file]]
+path = "README.md"
+required = true
+require_line_count = 20
+
+[[file]]
+path = "docs/architecture.md"
+required = true
+
+[[file]]
+path = "docs/roadmap.md"
+required = true
+
+[[file]]
+path = "LICENSE"
+required = true
+
+[[command]]
+name = "workspace tests"
+cmd = ["cargo", "test", "--workspace"]
+expect_exit = 0
+timeout_secs = 300
+stdout_contains = ["test result: ok"]
+
+[[command]]
+name = "clippy"
+cmd = ["cargo", "clippy", "--workspace", "--all-targets", "--", "-D", "warnings"]
+expect_exit = 0
+timeout_secs = 300
+
+[[command]]
+name = "format check"
+cmd = ["cargo", "fmt", "--check"]
+expect_exit = 0
+timeout_secs = 60

@@ -1,0 +1,26 @@
+[daemon]
+name = ""
+data_dir = "/Users/REPLACE_ME/Library/Application Support/Bloom/data"
+availability = "restricted"
+
+[api]
+bind = "127.0.0.1:7420"
+
+[telemetry]
+interval_ms = 1000
+
+[ollama]
+enabled = true
+mode = "attached"
+base_url = "http://127.0.0.1:11434"
+binary = "ollama"
+keep_alive = "5m"
+spawn_timeout_ms = 15000
+
+[policies]
+max_active_jobs = 4
+drain_on_start = false
+
+[swarm]
+discovery = false
+advertise = false

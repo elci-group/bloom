@@ -1,0 +1,23 @@
+[Unit]
+Description=Bloom distributed inference node daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/bloom/bloomd.env
+ExecStart=/usr/local/bin/bloomd --config /etc/bloom/bloomd.toml
+Restart=on-failure
+RestartSec=2
+KillSignal=SIGTERM
+TimeoutStopSec=15
+
+# Harden: bloomd only needs access to its state directory and the local
+# inference harness it manages.
+NoNewPrivileges=true
+ProtectSystem=strict
+StateDirectory=bloom
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

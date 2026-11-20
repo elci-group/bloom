@@ -1,0 +1,13 @@
+[package]
+name = "bloom-storage"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+bloom-core = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+sqlx = { workspace = true }
