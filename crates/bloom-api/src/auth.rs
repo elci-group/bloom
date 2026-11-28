@@ -31,7 +31,7 @@ pub async fn require_token(
             (&Method::GET, "/bloom/v1/nodes")
                 | (
                     &Method::POST,
-                    "/v1/chat/completions" | "/bloom/v1/inference"
+                    "/v1/chat/completions" | "/bloom/v1/inference" | "/bloom/v1/admissions"
                 )
         ) {
             return ApiError::forbidden("peer credential cannot access this endpoint")

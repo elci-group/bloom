@@ -141,7 +141,7 @@ pub async fn forward_json(
         .get("model")
         .and_then(serde_json::Value::as_str)
         .map(str::to_owned);
-    let mut targets = stream::iter(candidates.into_iter().enumerate().map(|(index, peer)| {
+    let probes = stream::iter(candidates.into_iter().enumerate().map(|(index, peer)| {
         let client = client.clone();
         let model = model.clone();
         async move {
@@ -152,48 +152,76 @@ pub async fn forward_json(
     .buffer_unordered(4)
     .collect::<Vec<_>>()
     .await;
-    targets.sort_by(|(left_index, left), (right_index, right)| {
-        let left_target = left.as_ref().ok();
-        let right_target = right.as_ref().ok();
-        let left_preferred = left_target.is_some_and(|target| {
-            preferred_node.is_some_and(|node| target.peer.node_id.as_str() == node.as_str())
-        });
-        let right_preferred = right_target.is_some_and(|target| {
-            preferred_node.is_some_and(|node| target.peer.node_id.as_str() == node.as_str())
-        });
-        right_preferred
-            .cmp(&left_preferred)
-            .then_with(|| {
-                let left_rank =
-                    left_target.map_or((false, false, 0, 0), |target| target.hint.rank());
-                let right_rank =
-                    right_target.map_or((false, false, 0, 0), |target| target.hint.rank());
-                right_rank.cmp(&left_rank)
-            })
-            .then_with(|| left_index.cmp(right_index))
-    });
-
     let mut last_error = None;
-    for (_, target) in targets {
-        let target = match target {
-            Ok(target) => target,
+    // Every failure so far was a peer declining for lack of capacity (as
+    // opposed to a transport, identity or upstream fault).
+    let mut only_capacity_refusals = true;
+    let mut reachable = Vec::new();
+    for (index, probe) in probes {
+        match probe {
+            Ok(target) => reachable.push((index, target)),
             Err((peer_id, error)) => {
                 last_error = Some(format!("peer {peer_id}: {error}"));
+                only_capacity_refusals = false;
+            }
+        }
+    }
+    let keys = rank_keys(
+        &reachable
+            .iter()
+            .map(|(_, target)| target.hint)
+            .collect::<Vec<_>>(),
+    );
+    let mut ranked = reachable
+        .into_iter()
+        .zip(keys)
+        .map(|((index, target), key)| {
+            let preferred =
+                preferred_node.is_some_and(|node| target.peer.node_id.as_str() == node.as_str());
+            (preferred, key, index, target)
+        })
+        .collect::<Vec<_>>();
+    // Requested node first, then the best hint, then configured order.
+    ranked.sort_by(|left, right| {
+        right
+            .0
+            .cmp(&left.0)
+            .then_with(|| right.1.cmp(&left.1))
+            .then_with(|| left.2.cmp(&right.2))
+    });
+
+    for (_, _, _, target) in ranked {
+        let peer = target.peer;
+        let token = target.token;
+        let base = target.base;
+
+        // Claim an execution slot before the prompt leaves this node, so a
+        // competing request cannot take it between ranking and admission.
+        let admission = match request_admission(client, &base, &token, &peer.node_id).await {
+            Ok(admission) => admission,
+            Err(refusal) => {
+                only_capacity_refusals &= refusal.capacity;
+                last_error = Some(format!("peer {}: {}", peer.node_id, refusal.detail));
                 continue;
             }
         };
-        let peer = target.peer;
-        let token = target.token;
-        let mut base = target.base;
-        let base_path = base.path().trim_end_matches('/').to_string();
-        base.set_path(&format!("{base_path}{path}"));
-        base.set_query(None);
-        base.set_fragment(None);
+        if let Some(bloom) = body
+            .get_mut("bloom")
+            .and_then(serde_json::Value::as_object_mut)
+        {
+            match &admission {
+                Some(id) => bloom.insert("admission".into(), serde_json::Value::String(id.clone())),
+                None => bloom.remove("admission"),
+            };
+        }
 
-        let mut request = client.post(base).json(body);
-        request = request.bearer_auth(token);
+        let request = client
+            .post(endpoint(&base, path))
+            .bearer_auth(token)
+            .json(body);
         match request.send().await {
             Ok(response) if retryable_status(response.status()) && allow_failover => {
+                only_capacity_refusals &= capacity_status(response.status());
                 last_error = Some(format!(
                     "peer {} returned {}",
                     peer.node_id,
@@ -202,14 +230,95 @@ pub async fn forward_json(
             }
             Ok(response) => return Ok(Some(proxy_response(response))),
             Err(error) => {
+                only_capacity_refusals = false;
                 last_error = Some(format!("peer {} request failed: {error}", peer.node_id))
             }
         }
     }
     match last_error {
+        Some(error) if only_capacity_refusals => Err(ApiError::unavailable(error)),
         Some(error) => Err(ApiError::upstream(error)),
         None => Ok(None),
     }
+}
+
+fn endpoint(base: &reqwest::Url, path: &str) -> reqwest::Url {
+    let mut url = base.clone();
+    let base_path = base.path().trim_end_matches('/').to_string();
+    url.set_path(&format!("{base_path}{path}"));
+    url.set_query(None);
+    url.set_fragment(None);
+    url
+}
+
+struct Refusal {
+    /// The peer is healthy but has no free slot (or is draining).
+    capacity: bool,
+    detail: String,
+}
+
+/// Ask a verified peer for an execution-slot hold. `Ok(None)` means the peer
+/// predates admissions; the request is then forwarded without a hold and the
+/// peer applies its ordinary admission check.
+async fn request_admission(
+    client: &reqwest::Client,
+    base: &reqwest::Url,
+    token: &str,
+    node_id: &NodeId,
+) -> Result<Option<String>, Refusal> {
+    #[derive(serde::Deserialize)]
+    struct Granted {
+        admission_id: String,
+        node_id: NodeId,
+    }
+    let fault = |detail: String| Refusal {
+        capacity: false,
+        detail,
+    };
+    let response = client
+        .post(endpoint(base, "/bloom/v1/admissions"))
+        .bearer_auth(token)
+        .timeout(Duration::from_secs(3))
+        .json(&serde_json::json!({ "ttl_ms": ADMISSION_TTL_MS }))
+        .send()
+        .await
+        .map_err(|error| fault(format!("admission request failed: {error}")))?;
+    let status = response.status();
+    if matches!(
+        status,
+        reqwest::StatusCode::NOT_FOUND | reqwest::StatusCode::METHOD_NOT_ALLOWED
+    ) {
+        return Ok(None);
+    }
+    if capacity_status(status) {
+        return Err(Refusal {
+            capacity: true,
+            detail: format!("declined admission ({status})"),
+        });
+    }
+    if status != reqwest::StatusCode::CREATED {
+        return Err(fault(format!("admission request returned {status}")));
+    }
+    let granted: Granted = response
+        .json()
+        .await
+        .map_err(|error| fault(format!("invalid admission response: {error}")))?;
+    if granted.node_id != *node_id {
+        return Err(fault(
+            "admission granted by an unexpected node identity".into(),
+        ));
+    }
+    Ok(Some(granted.admission_id))
+}
+
+/// Long enough to cover the forward that immediately follows the grant.
+const ADMISSION_TTL_MS: u64 = 5_000;
+
+fn capacity_status(status: reqwest::StatusCode) -> bool {
+    matches!(
+        status,
+        reqwest::StatusCode::TOO_MANY_REQUESTS | reqwest::StatusCode::SERVICE_UNAVAILABLE
+    )
 }
 
 #[derive(Debug, Clone, Copy, Default, serde::Deserialize)]
@@ -218,17 +327,49 @@ struct SchedulingHint {
     available_slots: u32,
     available_memory_bytes: u64,
     model_resident: Option<bool>,
+    throughput_tps: Option<f64>,
 }
 
+/// (has a free slot, model resident, throughput bucket, free slots, free MiB)
+type RankKey = (bool, bool, i32, u32, u64);
+
 impl SchedulingHint {
-    fn rank(self) -> (bool, bool, u32, u64) {
-        (
-            self.available_slots > 0,
-            self.model_resident.unwrap_or(false),
-            self.available_slots,
-            self.available_memory_bytes / (1024 * 1024),
-        )
+    /// Decode rate on a log2 scale, so only roughly 2x differences reorder
+    /// peers and measurement noise does not.
+    fn throughput_bucket(self) -> Option<i32> {
+        self.throughput_tps
+            .filter(|tps| tps.is_finite() && *tps >= 1.0)
+            .map(|tps| tps.log2().floor() as i32)
     }
+}
+
+/// Rank keys for a set of candidates, compared highest-first. A peer with no
+/// throughput measurement gets the median bucket of the measured candidates:
+/// treating it as slow would starve it of the work needed to measure it.
+fn rank_keys(hints: &[SchedulingHint]) -> Vec<RankKey> {
+    let buckets = hints
+        .iter()
+        .map(|hint| hint.throughput_bucket())
+        .collect::<Vec<_>>();
+    let mut measured = buckets.iter().flatten().copied().collect::<Vec<_>>();
+    measured.sort_unstable();
+    let neutral = measured
+        .get(measured.len().saturating_sub(1) / 2)
+        .copied()
+        .unwrap_or(0);
+    hints
+        .iter()
+        .zip(buckets)
+        .map(|(hint, bucket)| {
+            (
+                hint.available_slots > 0,
+                hint.model_resident.unwrap_or(false),
+                bucket.unwrap_or(neutral),
+                hint.available_slots,
+                hint.available_memory_bytes / (1024 * 1024),
+            )
+        })
+        .collect()
 }
 
 struct PeerTarget {
@@ -360,33 +501,69 @@ fn proxy_response(upstream: reqwest::Response) -> Response {
 
 #[cfg(test)]
 mod tests {
-    use super::SchedulingHint;
+    use super::{SchedulingHint, rank_keys};
+
+    const GIB: u64 = 1024 * 1024 * 1024;
+
+    fn hint(slots: u32, memory: u64, resident: bool, tps: Option<f64>) -> SchedulingHint {
+        SchedulingHint {
+            available_slots: slots,
+            available_memory_bytes: memory,
+            model_resident: Some(resident),
+            throughput_tps: tps,
+        }
+    }
 
     #[test]
     fn warm_peer_with_room_ranks_above_cold_or_busy_peer() {
-        let warm = SchedulingHint {
-            available_slots: 2,
-            available_memory_bytes: 8 * 1024 * 1024 * 1024,
-            model_resident: Some(true),
-        };
-        let cold = SchedulingHint {
-            available_slots: 4,
-            available_memory_bytes: 16 * 1024 * 1024 * 1024,
-            model_resident: Some(false),
-        };
-        let busy = SchedulingHint {
-            available_slots: 0,
-            available_memory_bytes: 1024 * 1024 * 1024,
-            model_resident: Some(true),
-        };
-        assert!(warm.rank() > cold.rank());
-        assert!(warm.rank() > busy.rank());
-        assert!(cold.rank() > busy.rank());
+        let keys = rank_keys(&[
+            hint(2, 8 * GIB, true, None),
+            hint(4, 16 * GIB, false, None),
+            hint(0, GIB, true, None),
+        ]);
+        let (warm, cold, busy) = (keys[0], keys[1], keys[2]);
+        assert!(warm > cold);
+        assert!(warm > busy);
+        assert!(cold > busy);
+    }
+
+    #[test]
+    fn faster_peer_wins_only_on_a_real_difference() {
+        let keys = rank_keys(&[
+            hint(1, GIB, true, Some(40.0)),
+            hint(4, GIB, true, Some(90.0)),
+            hint(4, GIB, true, Some(45.0)),
+        ]);
+        // 90 tok/s is a full log2 bucket above 40, so it outranks the others.
+        assert!(keys[1] > keys[0] && keys[1] > keys[2]);
+        // 45 vs 40 is noise; free slots decide instead.
+        assert!(keys[2] > keys[0]);
+        // Residency still dominates throughput: a cold fast peer must load.
+        let cold_fast = rank_keys(&[
+            hint(4, GIB, false, Some(500.0)),
+            hint(1, GIB, true, Some(10.0)),
+        ]);
+        assert!(cold_fast[1] > cold_fast[0]);
+    }
+
+    #[test]
+    fn unmeasured_peer_is_ranked_as_typical_not_slow() {
+        let keys = rank_keys(&[
+            hint(2, GIB, true, Some(20.0)),
+            hint(2, GIB, true, Some(80.0)),
+            hint(2, GIB, true, Some(40.0)),
+            hint(3, GIB, true, None),
+        ]);
+        // The median measured bucket is 40 tok/s (bucket 5); the new peer
+        // takes that bucket and wins it on free slots.
+        assert_eq!(keys[3].2, keys[2].2);
+        assert!(keys[3] > keys[2]);
+        assert!(keys[1] > keys[3]);
     }
 
     #[test]
     fn old_peer_without_hints_gets_safe_zero_rank() {
         let old: SchedulingHint = serde_json::from_str("{}").unwrap();
-        assert_eq!(old.rank(), (false, false, 0, 0));
+        assert_eq!(rank_keys(&[old]), vec![(false, false, 0, 0, 0)]);
     }
 }

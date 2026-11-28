@@ -59,7 +59,9 @@ async fn node_view(state: &SharedState, model: Option<&str>) -> Value {
     };
     let capacity = bloom_core::sync::read_lock(&state.capacity).clone();
     let active_jobs = state.jobs.active_count() as u32;
-    let available_slots = state.max_active_jobs.saturating_sub(active_jobs);
+    let occupied_slots = u32::try_from(state.jobs.occupied_slots()).unwrap_or(u32::MAX);
+    let available_slots = state.max_active_jobs.saturating_sub(occupied_slots);
+    let throughput_tps = model.and_then(|model| state.throughput.tokens_per_second(model));
     let model_resident = model.and_then(|model| {
         inventory_model
             .as_ref()
@@ -88,6 +90,7 @@ async fn node_view(state: &SharedState, model: Option<&str>) -> Value {
             "available_slots": available_slots,
             "available_memory_bytes": capacity.memory.available_bytes.saturating_sub(state.reservations.total_reserved()),
             "model_resident": model_resident,
+            "throughput_tps": throughput_tps,
         },
     })
 }
@@ -272,14 +275,13 @@ pub(crate) async fn inference(
             ));
         }
     };
-    let allow_loading = request.bloom.allow_model_loading;
     let (job, stream) = prepare_inference(
         &state,
         request.model.clone(),
         messages,
         Default::default(),
         request.stream,
-        allow_loading,
+        &request.bloom,
         "inference",
     )
     .await?;
@@ -327,6 +329,45 @@ pub(crate) async fn inference(
         }
     }))
     .into_response())
+}
+
+/// Default and ceiling for admission holds. A router forwards immediately
+/// after it is granted a hold, so the hold only needs to outlive one request
+/// round trip; an abandoned hold frees itself when it expires.
+const DEFAULT_ADMISSION_TTL_MS: u64 = 5_000;
+const MAX_ADMISSION_TTL_MS: u64 = 10_000;
+
+#[derive(Deserialize, Default)]
+pub struct AdmissionRequest {
+    #[serde(default)]
+    pub ttl_ms: Option<u64>,
+}
+
+/// Grant a routing peer a short-lived hold on one execution slot.
+pub async fn admit(
+    State(state): State<SharedState>,
+    body: Option<Json<AdmissionRequest>>,
+) -> Result<Response, ApiError> {
+    if state.draining.load(std::sync::atomic::Ordering::SeqCst) {
+        return Err(ApiError::unavailable("node is draining; refusing new work"));
+    }
+    let ttl_ms = body
+        .and_then(|Json(body)| body.ttl_ms)
+        .unwrap_or(DEFAULT_ADMISSION_TTL_MS)
+        .clamp(1, MAX_ADMISSION_TTL_MS);
+    let admission = state
+        .jobs
+        .admit(state.max_active_jobs, Duration::from_millis(ttl_ms))
+        .ok_or_else(|| ApiError::too_many_requests("no free execution slot on this node"))?;
+    Ok((
+        axum::http::StatusCode::CREATED,
+        Json(json!({
+            "admission_id": admission.admission_id,
+            "expires_at_ms": admission.expires_at_ms,
+            "node_id": state.node.id.as_str(),
+        })),
+    )
+        .into_response())
 }
 
 #[derive(Deserialize)]

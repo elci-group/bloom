@@ -5,6 +5,9 @@ availability = "restricted"
 
 [api]
 bind = "127.0.0.1:7420"
+# Set both paths to enable native HTTPS instead of using a reverse proxy.
+# tls_cert = "/Users/REPLACE_ME/.config/bloom/tls/bloom-node.crt"
+# tls_key = "/Users/REPLACE_ME/.config/bloom/tls/bloom-node.key"
 
 [telemetry]
 interval_ms = 1000

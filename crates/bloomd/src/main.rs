@@ -1,3 +1,4 @@
+use axum::serve::Listener;
 use bloom_api::{AppState, EventHub, JobManager, SharedState, router};
 use bloom_core::capacity::{InferenceCapacity, ModelCapacityEntry, ModelResidency, unix_millis};
 use bloom_core::config::{AvailabilitySetting, BloomConfig, HarnessMode};
@@ -10,10 +11,185 @@ use bloom_resources::{TelemetryCollector, host_facts};
 use bloom_storage::Store;
 use clap::Parser;
 use std::fs::{File, OpenOptions};
+use std::io::BufReader;
+use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
+use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::{Semaphore, mpsc, watch};
+use tokio_rustls::TlsAcceptor;
+use tokio_rustls::server::TlsStream;
+
+enum ApiListener {
+    Http(TcpListener),
+    Https(TlsListener),
+}
+
+impl ApiListener {
+    async fn bind(config: &BloomConfig) -> Result<Self, BloomError> {
+        match (&config.api.tls_cert, &config.api.tls_key) {
+            (None, None) => TcpListener::bind(&config.api.bind)
+                .await
+                .map(Self::Http)
+                .map_err(|error| {
+                    BloomError::Api(format!("cannot bind {}: {error}", config.api.bind))
+                }),
+            (Some(cert), Some(key)) => TlsListener::bind(
+                &config.api.bind,
+                &bloom_core::config::expand_home(cert),
+                &bloom_core::config::expand_home(key),
+            )
+            .await
+            .map(Self::Https),
+            _ => Err(BloomError::Config(
+                "api.tls_cert and api.tls_key must be configured together".into(),
+            )),
+        }
+    }
+
+    fn local_addr(&self) -> Result<SocketAddr, std::io::Error> {
+        match self {
+            Self::Http(listener) => listener.local_addr(),
+            Self::Https(listener) => listener.local_addr(),
+        }
+    }
+
+    fn is_https(&self) -> bool {
+        matches!(self, Self::Https(_))
+    }
+}
+
+struct TlsListener {
+    address: SocketAddr,
+    accepted: mpsc::Receiver<(TlsStream<TcpStream>, SocketAddr)>,
+    shutdown: watch::Sender<bool>,
+}
+
+impl TlsListener {
+    async fn bind(address: &str, cert_path: &Path, key_path: &Path) -> Result<Self, BloomError> {
+        let acceptor = load_tls_acceptor(cert_path, key_path)?;
+        let listener = TcpListener::bind(address)
+            .await
+            .map_err(|error| BloomError::Api(format!("cannot bind {address}: {error}")))?;
+        let local_address = listener
+            .local_addr()
+            .map_err(|error| BloomError::Api(error.to_string()))?;
+        let (accepted_tx, accepted_rx) = mpsc::channel(64);
+        let (shutdown_tx, mut shutdown_rx) = watch::channel(false);
+        let handshakes = Arc::new(Semaphore::new(64));
+
+        tokio::spawn(async move {
+            loop {
+                let accepted = tokio::select! {
+                    changed = shutdown_rx.changed() => {
+                        if changed.is_err() || *shutdown_rx.borrow() {
+                            break;
+                        }
+                        continue;
+                    }
+                    accepted = listener.accept() => accepted,
+                };
+                let (stream, peer) = match accepted {
+                    Ok(accepted) => accepted,
+                    Err(error) => {
+                        tracing::warn!(%error, "TLS listener accept failed");
+                        tokio::time::sleep(Duration::from_millis(100)).await;
+                        continue;
+                    }
+                };
+                let permit = match Arc::clone(&handshakes).try_acquire_owned() {
+                    Ok(permit) => permit,
+                    Err(_) => {
+                        tracing::warn!(%peer, "dropping TLS connection: handshake limit reached");
+                        continue;
+                    }
+                };
+                let acceptor = acceptor.clone();
+                let accepted_tx = accepted_tx.clone();
+                tokio::spawn(async move {
+                    match tokio::time::timeout(Duration::from_secs(5), acceptor.accept(stream))
+                        .await
+                    {
+                        Ok(Ok(stream)) => {
+                            let _ = accepted_tx.send((stream, peer)).await;
+                        }
+                        Ok(Err(error)) => {
+                            tracing::debug!(%peer, %error, "TLS handshake rejected");
+                        }
+                        Err(_) => tracing::debug!(%peer, "TLS handshake timed out"),
+                    }
+                    drop(permit);
+                });
+            }
+        });
+
+        Ok(Self {
+            address: local_address,
+            accepted: accepted_rx,
+            shutdown: shutdown_tx,
+        })
+    }
+
+    fn local_addr(&self) -> Result<SocketAddr, std::io::Error> {
+        Ok(self.address)
+    }
+}
+
+impl Listener for TlsListener {
+    type Io = TlsStream<TcpStream>;
+    type Addr = SocketAddr;
+
+    async fn accept(&mut self) -> (Self::Io, Self::Addr) {
+        match self.accepted.recv().await {
+            Some(connection) => connection,
+            None => std::future::pending().await,
+        }
+    }
+
+    fn local_addr(&self) -> Result<Self::Addr, std::io::Error> {
+        self.local_addr()
+    }
+}
+
+impl Drop for TlsListener {
+    fn drop(&mut self) {
+        let _ = self.shutdown.send(true);
+    }
+}
+
+fn load_tls_acceptor(cert_path: &Path, key_path: &Path) -> Result<TlsAcceptor, BloomError> {
+    let cert_file = File::open(cert_path).map_err(|error| {
+        BloomError::Config(format!(
+            "cannot open TLS certificate {}: {error}",
+            cert_path.display()
+        ))
+    })?;
+    let certs = rustls_pemfile::certs(&mut BufReader::new(cert_file))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| BloomError::Config(format!("invalid TLS certificate: {error}")))?;
+    if certs.is_empty() {
+        return Err(BloomError::Config(format!(
+            "TLS certificate {} contains no certificates",
+            cert_path.display()
+        )));
+    }
+    let key_file = File::open(key_path).map_err(|error| {
+        BloomError::Config(format!(
+            "cannot open TLS key {}: {error}",
+            key_path.display()
+        ))
+    })?;
+    let key = rustls_pemfile::private_key(&mut BufReader::new(key_file))
+        .map_err(|error| BloomError::Config(format!("invalid TLS private key: {error}")))?
+        .ok_or_else(|| BloomError::Config("TLS private key file contains no private key".into()))?;
+    let config = rustls::ServerConfig::builder()
+        .with_no_client_auth()
+        .with_single_cert(certs, key)
+        .map_err(|error| BloomError::Config(format!("TLS certificate/key mismatch: {error}")))?;
+    Ok(TlsAcceptor::from(Arc::new(config)))
+}
 
 #[derive(Parser)]
 #[command(
@@ -86,9 +262,8 @@ async fn run(config: BloomConfig) -> Result<(), BloomError> {
         .then(|| bloom_api::build_peer_client(config.swarm.ca_pem.as_deref()))
         .transpose()
         .map_err(BloomError::Config)?;
-    let listener = tokio::net::TcpListener::bind(&config.api.bind)
-        .await
-        .map_err(|e| BloomError::Api(format!("cannot bind {}: {e}", config.api.bind)))?;
+    let listener = ApiListener::bind(&config).await?;
+    let https = listener.is_https();
     let address = listener
         .local_addr()
         .map_err(|e| BloomError::Api(e.to_string()))?;
@@ -148,7 +323,7 @@ async fn run(config: BloomConfig) -> Result<(), BloomError> {
         id: node_id.clone(),
         name,
         version: env!("CARGO_PKG_VERSION").to_string(),
-        endpoint: format!("http://{address}"),
+        endpoint: format!("{}://{address}", if https { "https" } else { "http" }),
         harness: harness.kind().to_string(),
         availability: availability.clone(),
         modes: NodeModes {
@@ -161,7 +336,7 @@ async fn run(config: BloomConfig) -> Result<(), BloomError> {
         TelemetryCollector::new(node_id.clone(), availability.clone(), Some(data_dir))
             .map_err(|e| BloomError::Other(format!("cannot initialize telemetry: {e}")))?;
     let initial = collector.snapshot(Vec::new(), InferenceCapacity::default(), 0);
-    let discovery = configure_discovery(&config, address, &node_id)?;
+    let discovery = configure_discovery(&config, address, &node_id, https)?;
     if let Err(e) = harness.start().await {
         tracing::warn!(error = %e, "harness unavailable at startup; continuing degraded");
     }
@@ -174,6 +349,7 @@ async fn run(config: BloomConfig) -> Result<(), BloomError> {
         jobs: JobManager::new(store.clone()),
         events: EventHub::new(),
         reservations: Default::default(),
+        throughput: Default::default(),
         draining: AtomicBool::new(config.policies.drain_on_start),
         max_active_jobs: config.policies.max_active_jobs,
         api_token,
@@ -205,11 +381,26 @@ async fn run(config: BloomConfig) -> Result<(), BloomError> {
     let app = router(Arc::clone(&state));
     use std::future::IntoFuture;
     let (begin_shutdown, shutdown_started) = tokio::sync::oneshot::channel();
-    let server = axum::serve(listener, app)
-        .with_graceful_shutdown(async {
-            let _ = shutdown_started.await;
-        })
-        .into_future();
+    let server = async move {
+        let shutdown_started = shutdown_started;
+        match listener {
+            ApiListener::Http(listener) => {
+                axum::serve(listener, app)
+                    .with_graceful_shutdown(async move {
+                        let _ = shutdown_started.await;
+                    })
+                    .await
+            }
+            ApiListener::Https(listener) => {
+                axum::serve(listener, app)
+                    .with_graceful_shutdown(async move {
+                        let _ = shutdown_started.await;
+                    })
+                    .await
+            }
+        }
+    };
+    let server = server.into_future();
     tokio::pin!(server);
     let served = tokio::select! {
         result = &mut server => result,
@@ -237,11 +428,15 @@ fn configure_discovery(
     config: &BloomConfig,
     address: std::net::SocketAddr,
     node_id: &NodeId,
+    listener_https: bool,
 ) -> Result<Option<MdnsDiscovery>, BloomError> {
     if !config.swarm.discovery && !config.swarm.advertise {
         return Ok(None);
     }
-    let https_port = config.swarm.advertise_https_port;
+    let https_port = config
+        .swarm
+        .advertise_https_port
+        .or_else(|| listener_https.then_some(address.port()));
     if config.swarm.advertise && address.ip().is_loopback() && https_port.is_none() {
         return Err(BloomError::Config(
             "LAN advertisement requires a non-loopback API bind or advertise_https_port".into(),

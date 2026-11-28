@@ -6,7 +6,7 @@ This document records the implemented node and swarm architecture. It complement
 
 | Component | Status | Notes |
 | --------- | ------ | ----- |
-| **Bloomd** | Implemented | Tokio daemon; owns the harness, telemetry loop, ledger and HTTP surface |
+| **Bloomd** | Implemented | Tokio daemon; owns the harness, telemetry loop, ledger and HTTP/HTTPS surface |
 | Harness | Contract implemented | `InferenceHarness` trait in `bloom-harness`; Ollama adapter + mock |
 | Swarm | Configured peers | An operator provisions each trusted ID, HTTPS URL and bearer credential |
 | Router | Hint-ranked | Prefers the requested node, then ranks verified peers by their scheduling hint; can fall back before any response is forwarded |
@@ -17,7 +17,7 @@ This document records the implemented node and swarm architecture. It complement
 
 ## Daemon shape
 
-`bloomd` validates the bind and credentials, locks the data directory, opens SQLite, recovers interrupted jobs and loads the node ID. It then initializes telemetry and optional LAN discovery, starts the harness and serves HTTP. A harness startup failure leaves the control API available, and `ollama.enabled = false` makes the daemon a routing-only node. Shutdown drains HTTP connections for up to ten seconds before stopping the harness.
+`bloomd` validates the bind, credentials and optional TLS certificate, locks the data directory, opens SQLite, recovers interrupted jobs and loads the node ID. It then initializes telemetry and optional LAN discovery, starts the harness and serves HTTP or HTTPS. A harness startup failure leaves the control API available, and `ollama.enabled = false` makes the daemon a routing-only node. Shutdown drains connections for up to ten seconds before stopping the harness.
 
 Operator connections can close independently of inference connections. When an inference connection closes before completion, the daemon releases the local execution slot and records the interruption. At startup, the exclusive data lock allows the daemon to mark jobs left active by a prior process as interrupted.
 

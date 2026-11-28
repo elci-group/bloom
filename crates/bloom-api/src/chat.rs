@@ -25,6 +25,9 @@ pub(crate) struct InferenceJob {
     state: SharedState,
     output_chars: u64,
     complete: bool,
+    /// When the first output chunk arrived; starts the decode-rate window.
+    first_output_at: Option<std::time::Instant>,
+    completion_tokens: u64,
 }
 
 impl InferenceJob {
@@ -78,9 +81,10 @@ pub(crate) async fn prepare_inference(
     messages: Vec<ChatMessage>,
     parameters: bloom_harness::GenerationParameters,
     stream: bool,
-    allow_model_loading: bool,
+    routing: &bloom_core::RoutingOptions,
     kind: &str,
 ) -> Result<(InferenceJob, InferenceStream), ApiError> {
+    let allow_model_loading = routing.allow_model_loading;
     if state.draining.load(std::sync::atomic::Ordering::SeqCst) {
         return Err(ApiError::unavailable("node is draining; refusing new work"));
     }
@@ -112,6 +116,7 @@ pub(crate) async fn prepare_inference(
             kind,
             request_id.clone(),
             state.max_active_jobs,
+            routing.admission.as_ref(),
         )
         .await?
         .ok_or_else(|| ApiError::too_many_requests("active job limit reached for this node"))?;
@@ -122,6 +127,8 @@ pub(crate) async fn prepare_inference(
         state: state.clone(),
         output_chars: 0,
         complete: false,
+        first_output_at: None,
+        completion_tokens: 0,
     };
     state.events.publish(
         "job.started",
@@ -160,11 +167,23 @@ pub(crate) fn ledgered_events(job: InferenceJob, stream: InferenceStream) -> Inf
             match &event {
                 Ok(StreamEvent::Chunk { delta }) => {
                     job.output_chars += delta.chars().count() as u64;
+                    job.first_output_at
+                        .get_or_insert_with(std::time::Instant::now);
                 }
+                Ok(StreamEvent::Usage {
+                    completion_tokens, ..
+                }) => job.completion_tokens = *completion_tokens,
                 Ok(StreamEvent::Done { finish_reason }) => {
                     let state = if finish_reason == "cancelled" {
                         JobState::Cancelled
                     } else {
+                        if let Some(started) = job.first_output_at {
+                            job.state.throughput.record(
+                                job.model.as_str(),
+                                job.completion_tokens,
+                                started.elapsed(),
+                            );
+                        }
                         JobState::Completed
                     };
                     job.finish(state, None).await;
@@ -299,14 +318,13 @@ pub(crate) async fn chat_completions(
         .iter()
         .map(|m| ChatMessage::new(m.role.clone(), m.content.clone()))
         .collect();
-    let allow_loading = request.bloom.allow_model_loading;
     let (job, stream) = prepare_inference(
         &state,
         request.model.clone(),
         messages,
         request.parameters(),
         request.stream,
-        allow_loading,
+        &request.bloom,
         "chat",
     )
     .await?;

@@ -1,0 +1,197 @@
+// profile: gssh3
+// Bloom Node: per-device compute sharing dashboard.
+//
+// This compact scene targets the Goya live host's 400x150 desktop window.
+// The native bloom-node-app controller updates display text and handles
+// buttons. The scene contains no credentials or network effects.
+
+@ontology bloom_node {
+  @cell root {
+    id: "bloom.root";
+    position_p: (0, 0, 0);
+    extent_p: (1, 1, 0);
+    fill: #101820;
+
+    @cell header {
+      id: "bloom.header";
+      position_p: (0.03, 0.04, 0);
+      extent_p: (0.94, 0.14, 0);
+      fill: #182734;
+      @cell title {
+        id: "bloom.title";
+        position_p: (0.03, 0.08, 0);
+        extent_p: (0.45, 0.82, 0);
+        text: "Bloom Node";
+        text-size-p: 0.65;
+        fill: #e7f2f5;
+      }
+      @cell connection {
+        id: "bloom.connection";
+        position_p: (0.51, 0.08, 0);
+        extent_p: (0.46, 0.82, 0);
+        text: "__BLOOM_CONNECTION__";
+        text-size-p: 0.45;
+        fill: #f0c66a;
+      }
+    }
+
+    @cell sharing_card {
+      id: "bloom.sharing_card";
+      position_p: (0.03, 0.22, 0);
+      extent_p: (0.45, 0.44, 0);
+      fill: #17232c;
+      stroke: #2b4655;
+      stroke-width-p: 0.012;
+      @cell sharing_title {
+        id: "bloom.sharing_title";
+        position_p: (0.04, 0.04, 0);
+        extent_p: (0.92, 0.2, 0);
+        text: "This device";
+        text-size-p: 0.65;
+        fill: #e7f2f5;
+      }
+      @cell node_state {
+        id: "bloom.node_state";
+        position_p: (0.04, 0.3, 0);
+        extent_p: (0.92, 0.23, 0);
+        text: "__BLOOM_NODE_STATE__";
+        text-size-p: 0.48;
+        fill: #c2d5df;
+      }
+      @cell node_id {
+        id: "bloom.node_id";
+        position_p: (0.04, 0.57, 0);
+        extent_p: (0.92, 0.17, 0);
+        text: "__BLOOM_NODE_ID__";
+        text-size-p: 0.42;
+        fill: #7fa7bb;
+      }
+      @cell endpoint {
+        id: "bloom.endpoint";
+        position_p: (0.04, 0.78, 0);
+        extent_p: (0.92, 0.17, 0);
+        text: "__BLOOM_ENDPOINT__";
+        text-size-p: 0.4;
+        fill: #7fa7bb;
+      }
+    }
+
+    @cell resources_card {
+      id: "bloom.resources_card";
+      position_p: (0.51, 0.22, 0);
+      extent_p: (0.46, 0.44, 0);
+      fill: #17232c;
+      stroke: #2b4655;
+      stroke-width-p: 0.012;
+      @cell resources_title {
+        id: "bloom.resources_title";
+        position_p: (0.04, 0.04, 0);
+        extent_p: (0.92, 0.2, 0);
+        text: "Compute on this device";
+        text-size-p: 0.61;
+        fill: #e7f2f5;
+      }
+      @cell cpu_value {
+        id: "bloom.cpu_value";
+        position_p: (0.04, 0.3, 0);
+        extent_p: (0.44, 0.2, 0);
+        text: "__BLOOM_CPU__";
+        text-size-p: 0.42;
+        fill: #c2d5df;
+      }
+      @cell memory_value {
+        id: "bloom.memory_value";
+        position_p: (0.52, 0.3, 0);
+        extent_p: (0.44, 0.2, 0);
+        text: "__BLOOM_MEMORY__";
+        text-size-p: 0.39;
+        fill: #c2d5df;
+      }
+      @cell slots_value {
+        id: "bloom.slots_value";
+        position_p: (0.04, 0.55, 0);
+        extent_p: (0.44, 0.2, 0);
+        text: "__BLOOM_SLOTS__";
+        text-size-p: 0.39;
+        fill: #c2d5df;
+      }
+      @cell accelerator_value {
+        id: "bloom.accelerator_value";
+        position_p: (0.52, 0.55, 0);
+        extent_p: (0.44, 0.2, 0);
+        text: "__BLOOM_ACCELERATOR__";
+        text-size-p: 0.34;
+        fill: #c2d5df;
+      }
+      @cell model_value {
+        id: "bloom.model_value";
+        position_p: (0.04, 0.79, 0);
+        extent_p: (0.92, 0.16, 0);
+        text: "__BLOOM_MODELS__";
+        text-size-p: 0.37;
+        fill: #7fa7bb;
+      }
+    }
+
+    @cell controls {
+      id: "bloom.controls";
+      position_p: (0.03, 0.7, 0);
+      extent_p: (0.94, 0.15, 0);
+      @button enable_sharing {
+        id: "bloom.enable_sharing";
+        position_p: (0, 0.05, 0);
+        extent_p: (0.4, 0.88, 0);
+        text: "Enable sharing";
+        text-size-p: 0.48;
+        fill: #176b58;
+      }
+      @button pause_sharing {
+        id: "bloom.pause_sharing";
+        position_p: (0.42, 0.05, 0);
+        extent_p: (0.33, 0.88, 0);
+        text: "Pause work";
+        text-size-p: 0.45;
+        fill: #70423c;
+      }
+      @button refresh {
+        id: "bloom.refresh";
+        position_p: (0.77, 0.05, 0);
+        extent_p: (0.23, 0.88, 0);
+        text: "Refresh";
+        text-size-p: 0.45;
+        fill: #263b49;
+      }
+    }
+
+    @cell network_card {
+      id: "bloom.network_card";
+      position_p: (0.03, 0.88, 0);
+      extent_p: (0.94, 0.09, 0);
+      fill: #17232c;
+      @cell discovery_value {
+        id: "bloom.discovery_value";
+        position_p: (0.02, 0.08, 0);
+        extent_p: (0.46, 0.84, 0);
+        text: "__BLOOM_DISCOVERY__";
+        text-size-p: 0.52;
+        fill: #c2d5df;
+      }
+      @cell peer_value {
+        id: "bloom.peer_value";
+        position_p: (0.5, 0.08, 0);
+        extent_p: (0.25, 0.84, 0);
+        text: "__BLOOM_PEERS__";
+        text-size-p: 0.47;
+        fill: #c2d5df;
+      }
+      @cell action_status {
+        id: "bloom.action_status";
+        position_p: (0.77, 0.08, 0);
+        extent_p: (0.21, 0.84, 0);
+        text: "__BLOOM_ACTION_STATUS__";
+        text-size-p: 0.38;
+        fill: #f0c66a;
+      }
+    }
+  }
+}

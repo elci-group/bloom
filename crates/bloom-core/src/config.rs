@@ -54,6 +54,8 @@ pub struct ApiConfig {
     pub token: Option<String>,
     pub token_env: Option<String>,
     pub peer_token_env: Option<String>,
+    pub tls_cert: Option<PathBuf>,
+    pub tls_key: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -105,6 +107,8 @@ impl Default for ApiConfig {
             token: None,
             token_env: None,
             peer_token_env: None,
+            tls_cert: None,
+            tls_key: None,
         }
     }
 }

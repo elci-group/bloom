@@ -38,6 +38,7 @@ async fn test_state(tag: &str, token: Option<&str>, reply: &str, delay: Duration
         jobs: JobManager::new(store),
         events: EventHub::new(),
         reservations: ReservationRegistry::default(),
+        throughput: Default::default(),
         draining: AtomicBool::new(false),
         max_active_jobs: 4,
         api_token: token.map(str::to_string),

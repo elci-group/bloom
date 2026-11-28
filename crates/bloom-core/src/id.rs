@@ -63,3 +63,7 @@ string_id!(
     /// Identity of an atomic resource reservation.
     ReservationId
 );
+string_id!(
+    /// Identity of an execution-slot hold granted to a router before it forwards a prompt.
+    AdmissionId
+);

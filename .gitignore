@@ -2,6 +2,7 @@
 *.db
 *.db-shm
 *.db-wal
+bloom-node.key
 # Analysis and automation state written by uni / poka / kaptaind
 /.uni/
 /.kaptaind/

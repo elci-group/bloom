@@ -8,7 +8,7 @@ Bloom operates without mandatory cloud infrastructure, internet connectivity, ce
 
 Bloom runs as an autonomous inference node with optional LAN discovery and authenticated routing to configured peers.
 
-- `bloomd`, a persistent Rust daemon that serves the Bloom network API and an OpenAI-compatible inference API
+- `bloomd`, a persistent Rust daemon that serves the Bloom network API and an OpenAI-compatible inference API over loopback HTTP or configured HTTPS
 - Ollama harness adapter (attached or managed mode)
 - Local resource telemetry (CPU, memory, storage, GPU/NPU detection, thermal, power)
 - SQLite-backed execution ledger, event log and capacity snapshots
@@ -30,7 +30,7 @@ See [the roadmap](docs/roadmap.md) for milestone status and the work remaining f
 | Storage | `crates/bloom-storage` | SQLite ledger (jobs, events, kv state) |
 | Network API | `crates/bloom-api` | Axum router: `/v1/*` (OpenAI-compatible) and `/bloom/v1/*` (control) |
 | Discovery | `crates/bloom-discovery` | LAN advertisement and candidate registry |
-| CLI | `crates/bloom-cli` | Operator CLI (binary `bloom`) |
+| CLI and node app | `crates/bloom-cli` | Operator CLI (`bloom`) and Goya node dashboard (`bloom-node-app`) |
 
 ## Quick start
 
@@ -53,12 +53,15 @@ Configuration is read from `bloomd.toml` in the working directory, `~/.config/bl
 
 Enable `[swarm] discovery = true` to browse for Bloom nodes on the LAN. Set
 `advertise = true` and `advertise_https_port` to announce the port of a local
-HTTPS reverse proxy while keeping Bloom itself on loopback. An advertised
-port without the HTTPS override uses the daemon's non-loopback HTTP bind.
+HTTPS endpoint. This can be a reverse proxy while Bloom stays on loopback, or
+Bloom's own TLS listener configured with `api.tls_cert` and `api.tls_key`.
+An advertised port without the HTTPS override uses the daemon's non-loopback
+HTTP bind.
 Browse results from `bloom discovery` are unauthenticated identity claims.
 
-Serve each inference peer through an HTTPS reverse proxy. Set
-`api.token_env` for operator access and `api.peer_token_env` for a distinct
+Serve each inference peer through HTTPS, either with Bloom's TLS listener or
+an HTTPS reverse proxy. Set `api.token_env` for operator access and
+`api.peer_token_env` for a distinct
 credential limited to node status and direct inference. Supply the token
 values through the daemon environment. The Linux unit reads
 `/etc/bloom/bloomd.env` if present.
@@ -138,9 +141,9 @@ Control surface:
 
 With an operator token configured, send `Authorization: Bearer <token>` on
 each request. The CLI accepts this token from `BLOOM_API_TOKEN`. A daemon
-without authentication can bind only to loopback. The built-in HTTP
-listener uses plaintext, so place the listener behind HTTPS for access
-across the network.
+without authentication can bind only to loopback. The default built-in
+listener uses plaintext; configure `api.tls_cert` and `api.tls_key` or place
+it behind HTTPS for access across the network.
 
 ## Development
 

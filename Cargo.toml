@@ -31,6 +31,9 @@ futures = "0.3"
 tokio-stream = { version = "0.1", features = ["sync"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+rustls = "0.23"
+rustls-pemfile = "2"
+tokio-rustls = "0.26"
 
 [profile.release]
 lto = "thin"

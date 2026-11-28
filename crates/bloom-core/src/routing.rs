@@ -1,4 +1,4 @@
-use crate::id::NodeId;
+use crate::id::{AdmissionId, NodeId};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -21,6 +21,10 @@ pub struct RoutingOptions {
     pub allow_model_loading: bool,
     #[serde(default)]
     pub allow_cloud: bool,
+    /// Execution-slot hold granted by this node to a routing peer. Set by
+    /// routers on forwarded requests; consumed when the job is admitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub admission: Option<AdmissionId>,
 }
 
 fn default_true() -> bool {
@@ -35,6 +39,7 @@ impl Default for RoutingOptions {
             allow_failover: true,
             allow_model_loading: true,
             allow_cloud: false,
+            admission: None,
         }
     }
 }

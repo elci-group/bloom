@@ -7,6 +7,9 @@ availability = "continuous"
 bind = "127.0.0.1:7420"
 # token_env = "BLOOM_API_TOKEN"
 # peer_token_env = "BLOOM_INFERENCE_TOKEN"
+# Set both paths to enable native HTTPS instead of using a reverse proxy.
+# tls_cert = "/etc/bloom/node.crt"
+# tls_key = "/etc/bloom/node.key"
 
 [telemetry]
 interval_ms = 1000

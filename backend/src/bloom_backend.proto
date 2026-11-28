@@ -1,0 +1,62 @@
+syntax = "proto3";
+
+package bloom;
+
+// The protocol version.
+option go_package = "bloom;bloom";
+
+// Message representing a node in the Bloom network.
+message NodeInfo {
+  string node_id = 1;
+  double cpu_capacity = 2;
+  double gpu_capacity = 3;
+  int32 active_jobs = 4;
+  double timestamp = 5;  // Unix timestamp when node registered
+}
+
+// Request to register a node.
+message RegisterNodeRequest {
+  string node_id = 1;
+  double cpu_capacity = 2;
+  double gpu_capacity = 3;
+}
+
+// Response from RegisterNode.
+message RegisterNodeResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+// Request to list nodes.
+message ListNodesRequest {}
+
+// Response to ListNodes.
+message ListNodesResponse {
+  repeated NodeInfo nodes = 1;
+}
+
+// Request for a job.
+message JobRequest {
+  string node_id = 1;
+  string model_name = 2;
+  bytes input_data = 3;
+  string parameters = 4;
+}
+
+// Response to SubmitJob.
+message JobResponse {
+  string job_id = 1;
+  string status = 2;  // e.g., "queued", "running", "completed"
+}
+
+// Request for job status.
+message JobStatusRequest {
+  string job_id = 1;
+}
+
+// Response for job status (streamed).
+message JobStatusResponse {
+  string job_id = 1;
+  string status = 2;
+  double progress = 3;  // 0.0 to 1.0
+}

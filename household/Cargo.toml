@@ -1,0 +1,22 @@
+# Bloom's household link for the Goya webOS Launcher (Slice 2,
+# goya docs/arachnid/launcher.md). Its own workspace, so it builds
+# independently of the Bloom workspace manifest.
+[workspace]
+
+[package]
+name = "bloom-household"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Serves Bloom nodes' telemetry and Wake-on-LAN to a paired Goya TV over goya.lanlink/0"
+
+[[bin]]
+name = "bloom-tv"
+path = "src/main.rs"
+
+[dependencies]
+# Interim path to the Arachnid v0.3 worktree until the crate lands on a
+# shared Goya branch.
+goya-lanlink-peer = { path = "../../goya-arachnid-v03/crates/goya-lanlink-peer" }
+serde_json = "1"
+ureq = { version = "3", default-features = false, features = ["rustls", "json"] }

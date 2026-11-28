@@ -1,0 +1,208 @@
+// Bloom Pocket: a phone-side Bloom node card, compiled for Android by Aragon.
+//
+// Profile: GSSH/4-live (Aragon admits it via admit_v4_live). All lengths are
+// proportional. State is durable, so it lives in Android's default local
+// store (android.preferences.v1) and survives restarts.
+//
+// The scene is self-contained: Aragon refuses `host` state and D2 effects,
+// so this app does not talk to bloomd. It records the operator's intent for
+// this device (node name, sharing on or paused, slots offered). A host
+// controller can read those same IDs later.
+//
+// Build:
+//   aragon-android-project apps/bloom-pocket.gscene <out-dir> --scene
+
+@ontology bloom_pocket {
+  @state {
+    sharing: bool = false durable;
+    slots: int = 1 durable;
+    node_name: text = "pocket-node" durable;
+  }
+
+  @cell root {
+    id: "pocket.root";
+    position_p: (0, 0, 0);
+    extent_p: (1, 1, 0);
+    fill: #101820;
+
+    @cell header {
+      id: "pocket.header";
+      position_p: (0.05, 0.03, 0);
+      extent_p: (0.9, 0.1, 0);
+      fill: #182734;
+      @cell title {
+        id: "pocket.title";
+        position_p: (0.05, 0.1, 0);
+        extent_p: (0.9, 0.5, 0);
+        text: "Bloom Pocket";
+        text-size-p: 0.8;
+        fill: #e7f2f5;
+      }
+      @cell subtitle {
+        id: "pocket.subtitle";
+        position_p: (0.05, 0.62, 0);
+        extent_p: (0.9, 0.32, 0);
+        text: "Share this phone with your swarm";
+        text-size-p: 0.7;
+        fill: #7fa7bb;
+      }
+    }
+
+    @cell node_card {
+      id: "pocket.node_card";
+      position_p: (0.05, 0.16, 0);
+      extent_p: (0.9, 0.24, 0);
+      fill: #17232c;
+      stroke: #2b4655;
+      stroke-width-p: 0.006;
+      @cell node_label {
+        id: "pocket.node_label";
+        position_p: (0.05, 0.06, 0);
+        extent_p: (0.9, 0.18, 0);
+        text: "Node: ";
+        text-from: state.node_name;
+        text-size-p: 0.6;
+        fill: #e7f2f5;
+      }
+      @cell state_on {
+        id: "pocket.state_on";
+        position_p: (0.05, 0.3, 0);
+        extent_p: (0.9, 0.18, 0);
+        text: "Sharing compute";
+        text-size-p: 0.6;
+        fill: #176b58;
+        present-when: state.sharing is true;
+      }
+      @cell state_off {
+        id: "pocket.state_off";
+        position_p: (0.05, 0.3, 0);
+        extent_p: (0.9, 0.18, 0);
+        text: "Paused: not taking work";
+        text-size-p: 0.6;
+        fill: #70423c;
+        present-when: state.sharing is false;
+      }
+      @input name_field {
+        id: "pocket.name_field";
+        @iden { label: "Node name"; hint: "How this phone appears to peers"; }
+        position_p: (0.05, 0.58, 0);
+        extent_p: (0.6, 0.3, 0);
+        stroke: #2b4655;
+        stroke-width-p: 0.02;
+      }
+      @button rename {
+        id: "pocket.rename";
+        position_p: (0.68, 0.58, 0);
+        extent_p: (0.27, 0.3, 0);
+        text: "Rename";
+        text-size-p: 0.45;
+        fill: #263b49;
+      }
+    }
+
+    @cell slots_card {
+      id: "pocket.slots_card";
+      position_p: (0.05, 0.43, 0);
+      extent_p: (0.9, 0.2, 0);
+      fill: #17232c;
+      stroke: #2b4655;
+      stroke-width-p: 0.006;
+      @cell slots_value {
+        id: "pocket.slots_value";
+        position_p: (0.05, 0.08, 0);
+        extent_p: (0.9, 0.3, 0);
+        text: "Inference slots: ";
+        text-from: state.slots;
+        text-size-p: 0.6;
+        fill: #c2d5df;
+      }
+      @button slot_less {
+        id: "pocket.slot_less";
+        position_p: (0.05, 0.5, 0);
+        extent_p: (0.42, 0.4, 0);
+        text: "Fewer";
+        text-size-p: 0.45;
+        fill: #263b49;
+        present-when: state.slots at-least 2;
+      }
+      @button slot_more {
+        id: "pocket.slot_more";
+        position_p: (0.53, 0.5, 0);
+        extent_p: (0.42, 0.4, 0);
+        text: "More";
+        text-size-p: 0.45;
+        fill: #263b49;
+      }
+    }
+
+    @button enable_sharing {
+      id: "pocket.enable_sharing";
+      position_p: (0.05, 0.67, 0);
+      extent_p: (0.9, 0.1, 0);
+      text: "Share compute";
+      text-size-p: 0.45;
+      fill: #176b58;
+      present-when: state.sharing is false;
+    }
+    @button pause_sharing {
+      id: "pocket.pause_sharing";
+      position_p: (0.05, 0.67, 0);
+      extent_p: (0.9, 0.1, 0);
+      text: "Pause work";
+      text-size-p: 0.45;
+      fill: #70423c;
+      present-when: state.sharing is true;
+    }
+
+    @cell footer {
+      id: "pocket.footer";
+      position_p: (0.05, 0.82, 0);
+      extent_p: (0.9, 0.14, 0);
+      wrap: 44;
+      text: "Settings stay on this device. Pair with a bloomd peer to route work here.";
+      text-size-p: 0.2;
+      fill: #7fa7bb;
+    }
+  }
+
+  @interaction rename {
+    id: "pocket.action.rename";
+    trigger: button.rename.activate;
+    class: D1;
+    state { write node_name: text; }
+    input { value: text from "pocket.name_field"; }
+    set node_name = input.value;
+  }
+  @interaction slot_more {
+    id: "pocket.action.slot_more";
+    trigger: button.slot_more.activate;
+    class: D1;
+    state { read slots: int; write slots: int; }
+    input { }
+    set slots = state.slots + 1;
+  }
+  @interaction slot_less {
+    id: "pocket.action.slot_less";
+    trigger: button.slot_less.activate;
+    class: D1;
+    state { read slots: int; write slots: int; }
+    input { }
+    set slots = state.slots + -1;
+  }
+  @interaction enable_sharing {
+    id: "pocket.action.enable";
+    trigger: button.enable_sharing.activate;
+    class: D1;
+    state { write sharing: bool; }
+    input { }
+    set sharing = true;
+  }
+  @interaction pause_sharing {
+    id: "pocket.action.pause";
+    trigger: button.pause_sharing.activate;
+    class: D1;
+    state { write sharing: bool; }
+    input { }
+    set sharing = false;
+  }
+}

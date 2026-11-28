@@ -9,7 +9,7 @@ pub mod state;
 
 pub use error::ApiError;
 pub use peers::{build_peer_client, validate_peers};
-pub use state::{AppState, BloomEvent, EventHub, JobManager, SharedState};
+pub use state::{AppState, BloomEvent, EventHub, JobManager, SharedState, ThroughputTracker};
 
 use axum::routing::{get, post};
 use axum::{Router, middleware};
@@ -32,6 +32,7 @@ pub fn router(state: SharedState) -> Router {
         .route("/bloom/v1/jobs/cancel", post(control::cancel_job))
         .route("/bloom/v1/inference", post(control::inference))
         .route("/bloom/v1/reservations", post(control::reserve))
+        .route("/bloom/v1/admissions", post(control::admit))
         .route("/bloom/v1/models/load", post(control::load_model))
         .route("/bloom/v1/models/unload", post(control::unload_model))
         .route("/bloom/v1/events", get(control::events))
